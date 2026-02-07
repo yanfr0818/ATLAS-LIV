@@ -1,0 +1,28 @@
+# Output files (regenerable from scripts)
+output/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Large data (if any added later)
+*.h5
+*.hdf5
+
+# Keep these (not ignored):
+# - input/set3_pruned.parquet (source data)
+# - scripts/ (all analysis code)
+# - config.json

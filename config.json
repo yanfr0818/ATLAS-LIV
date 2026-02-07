@@ -1,0 +1,15 @@
+{
+    "set3_path": "D:\\HEP\\ATLAS\\LIV\\Set3",
+    "scramble_seed": 12345,
+    "n_scrambles": 10,
+    "phase_bins": {
+        "sday": 840,
+        "day": 900,
+        "hour": 60
+    },
+    "columns": {
+        "num": "ZllLumi",
+        "numerr": "ZllLumiErr",
+        "den": "OffLumi"
+    }
+}

@@ -1,0 +1,255 @@
+  %-------------------------------------------------------------------------------
+% This file provides a skeleton ATLAS note.
+% \pdfinclusioncopyfonts=1
+% This command may be needed in order to get \ell in PDF plots to appear. Found in
+% https://tex.stackexchange.com/questions/322010/pdflatex-glyph-undefined-symbols-disappear-from-included-pdf
+%-------------------------------------------------------------------------------
+% Specify where ATLAS LaTeX style files can be found.
+\RequirePackage{latex/atlaslatexpath}
+% Comment out the above line if the files are in a central location, e.g. $HOME/texmf.
+%-------------------------------------------------------------------------------
+\documentclass[NOTE, atlasdraft=true, texlive=2016, UKenglish]{atlasdoc}
+% The language of the document must be set: usually UKenglish or USenglish.
+% british and american also work!
+% Commonly used options:
+%  atlasdraft=true|false This document is an ATLAS draft.
+%  texlive=YYYY          Specify TeX Live version (2016 is default).
+%  coverpage             Create ATLAS draft cover page for collaboration circulation.
+%                        See atlas-draft-cover.tex for a list of variables that should be defined.
+%  cernpreprint          Create front page for a CERN preprint.
+%                        See atlas-preprint-cover.tex for a list of variables that should be defined.
+%  NOTE                  The document is an ATLAS note (draft).
+%  PAPER                 The document is an ATLAS paper (draft).
+%  CONF                  The document is a CONF note (draft).
+%  PUB                   The document is a PUB note (draft).
+%  BOOK                  The document is of book form, like an LOI or TDR (draft).
+%  txfonts=true|false    Use txfonts rather than the default newtx.
+%  paper=a4|letter       Set paper size to A4 (default) or letter.
+
+%-------------------------------------------------------------------------------
+% Extra packages:
+\usepackage{atlaspackage}
+% Commonly used options:
+%  biblatex=true|false   Use biblatex (default) or bibtex for the bibliography.
+%  backend=bibtex        Use the bibtex backend rather than biber.
+%  subfigure|subfig|subcaption  to use one of these packages for figures in figures.
+%  minimal               Minimal set of packages.
+%  default               Standard set of packages.
+%  full                  Full set of packages.
+%-------------------------------------------------------------------------------
+% Style file with biblatex options for ATLAS documents.
+\usepackage{atlasbiblatex}
+% Commonly used options:
+%  backref=true|false    Turn on or off back references in the bibliography.
+
+% Package for creating list of authors and contributors to the analysis.
+\usepackage{atlascontribute}
+
+% Useful macros
+\usepackage{atlasphysics}
+% See doc/atlas_physics.pdf for a list of the defined symbols.
+% Default options are:
+%   true:  journal, misc, particle, unit, xref
+%   false: BSM, hepparticle, hepprocess, hion, jetetmiss, math, process,
+%          other, snippets, texmf
+% See the package for details on the options.
+
+% Macro to add to-do notes (for several authors). Uses the todonotes package.
+% \ATLnote{JS}{Jane}{green!20}{green!50!black!60}
+% add macros \JSnote and \JSinote for notes in the margin and inline.
+% Set output=false in order not to print out the notes.
+% Comment this out for the final version of the note.
+\usepackage[output=true]{atlastodo}
+
+%for bra-ket notation
+\usepackage{braket}
+
+\usepackage{xcolor}
+
+% Files with references for use with biblatex.
+% Note that biber gives an error if it finds empty bib files.
+\addbibresource{ANA-EXOT-2021-37-INT1.bib}
+\addbibresource{bib/ATLAS.bib}
+\addbibresource{bib/CMS.bib}
+\addbibresource{bib/ConfNotes.bib}
+\addbibresource{bib/PubNotes.bib}
+\addbibresource{bib/Theory.bib}
+% Paths for figures - do not forget the / at the end of the directory name.
+\graphicspath{{logos/}{figures/}}
+
+% Add your own definitions here (file ANA-EXOT-2021-37-INT1-defs.sty).
+\usepackage{ANA-EXOT-2021-37-INT1-defs}
+
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage[normalem]{ulem}
+\usepackage[graphicx]{realboxes}
+\let\Bbbk\relax
+\usepackage{amssymb,amsmath}
+
+\usepackage{float}
+
+\newcommand{\el}[1]{{\color{orange} #1}}
+
+\DeclareOldFontCommand{\it}{\normalfont\itshape}{\mathit}
+%-------------------------------------------------------------------------------
+% Generic document information.
+%-------------------------------------------------------------------------------
+
+% Title, abstract and document.
+\input{ANA-EXOT-2021-37-INT1-metadata}
+% Author and title for the PDF file.
+\hypersetup{pdftitle={ATLAS document},pdfauthor={The ATLAS Collaboration}}
+
+%-------------------------------------------------------------------------------
+% Content
+%-------------------------------------------------------------------------------
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+% List of contributors - print here or after the Bibliography.
+% \PrintAtlasContribute{0.30}
+% \clearpage
+
+% List of to-do notes
+% \listoftodos
+
+%-------------------------------------------------------------------------------
+\clearpage
+%% \section{Executive Summary}
+%% \label{sec:ExeSummary}
+%% \input{sections/Sec_0_ExeSummary}
+
+\clearpage
+\section{Motivation}
+\label{lab:Motivation}
+\input{sections/Sec_Motivation}
+
+\clearpage
+\section{Theoretical background} %% [Nathan / Enrico]
+\label{lab:Theory}
+\input{sections/Sec_Theory}
+
+\clearpage
+\section{Methodology} %% [Uta]
+\label{lab:Methodology}
+\el{Definition of the observable, i.e. binned cross section. Comment on uncertainties on efficiencies and on origin of the Monte Carlo correction. Stress that using efficiencies from data removes time dependent effects. Explain the $F_\text{MC}(\mu)$ has two uncertainties: a statistical one and a systematic one ($\delta \mu \sim 1$). The latter is due to the uncertainty on the SM cross section used as normalization and is constant across the three main periods of data taking (2015+2016, 2017, 2018).}
+%\input{sections/Sec_Methodology}
+
+\clearpage
+\section{Time dependence of data}  
+\label{sec:data_time_dependence}
+\input{sections/0E1_time_dependence_of_data-oldchi2}
+%
+
+\clearpage
+\section{Double ratio simulation studies: single sampling}
+\label{sec:double_ratio}
+\input{sections/0E2_double_ratio_single_sampling-oldchi2}
+
+\clearpage
+\section{Double ratio simulation studies: single sampling with signal injection}
+\label{sec:double_ratio_injection_studies}
+\input{sections/0E3_double_ratio_single_sampling_signal_injection_studies-oldchi2}
+
+\clearpage
+\section{Double ratio simulation studies: multiple sampling}
+\label{sec:double_ratio_multiple}
+\input{sections/0E4_double_ratio_multiple_samplings-oldchi2}
+
+\clearpage
+\section{To do}
+\input{sections/0Ex_todo.tex}
+
+\clearpage
+\section{Luminosity-data driven toy studies}  %% [Yuji]
+\label{lab:ToyStudy}
+%\input{sections/Sec_ToyStudy}
+
+\clearpage
+\section{Data scrambling studies} %% [Ablet/Yuji/Enrico]
+\label{lab:DataScrambling}
+%\input{sections/Sec_DataScrambling_1_Methodology}  %% Yuji / Enrico
+%% \input{sections/Sec_DataScrambling_2_Sample} %% Yuji
+%\input{sections/Sec_DataScrambling_3_StatAna} %% Ablet --> move to Section 3.
+%\input{sections/Sec_DataScrambling_3_Results} %% Ablet
+%\input{sections/Sec_DataScrambling_4_10K_Results} %% Ablet
+
+
+\clearpage
+\section{Time-dependent systematic uncertainties} %% [Ablet/Uta]
+%\label{lab:Systematic}
+%\input{sections/Sec_Systematic_1_overview}
+%\input{sections/Sec_Systematic_2_ResidualEffect}
+%\input{sections/Sec_Systematic_3_StatAndResult}
+%\input{sections/Scan_priods_WithSystematics_SMEfits}
+
+\clearpage 
+\section{Model independent limits}
+\label{sec:Scrambling_generic_limits}
+%\input{sections/Sec_scrambled_generic_limits}
+
+\clearpage
+\section{Unblinded data studies} %%  [Ablet/Enrico]
+\label{lab:UnblindedDataStudy}
+%\input{sections/Sec_UnblindedStudy_1}
+
+\clearpage
+\section{Result}
+\label{sec:result}
+Place your results here.
+
+% All figures and tables should appear before the summary and conclusion.
+% The package placeins provides the macro \FloatBarrier to achieve this.
+% \FloatBarrier
+
+\clearpage
+\section{Interpretation}
+\label{sec:interpretation}
+You can find some text snippets that can be used in papers in \texttt{latex/atlassnippets.sty}.
+To use them, provide the \texttt{snippets} option to \texttt{atlasphysics}.
+
+\clearpage
+\section{Conclusion}
+\label{sec:conclusion}
+Place your conclusion here.
+
+
+
+%-------------------------------------------------------------------------------
+% If you use biblatex and either biber or bibtex to process the bibliography
+% just say \printbibliography here.
+ \printbibliography
+% If you want to use the traditional BibTeX you need to use the syntax below.
+% \bibliographystyle{obsolete/bst/atlasBibStyleWithTitle}
+% \bibliography{ANA-EXOT-2021-37-INT1,bib/ATLAS,bib/CMS,bib/ConfNotes,bib/PubNotes}
+%-------------------------------------------------------------------------------
+
+%-------------------------------------------------------------------------------
+% Print the list of contributors to the analysis.
+% The argument gives the fraction of the text width used for the names.
+%-------------------------------------------------------------------------------
+\clearpage
+The supporting notes for the analysis should also contain a list of contributors.
+This information should usually be included in \texttt{mydocument-metadata.tex}.
+The list should be printed either here or before the Table of Contents.
+\PrintAtlasContribute{0.30}
+
+%-------------------------------------------------------------------------------
+\clearpage
+\appendix
+\part*{Appendices}
+\addcontentsline{toc}{part}{Appendices}
+%-------------------------------------------------------------------------------
+
+In an ATLAS note, use the appendices to include all the technical details of your work
+that are relevant for the ATLAS Collaboration only (e.g.\ dataset details, software release used).
+This information should be printed after the Bibliography.
+
+
+
+
+\end{document}

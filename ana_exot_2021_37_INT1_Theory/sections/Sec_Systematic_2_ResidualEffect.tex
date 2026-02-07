@@ -1,0 +1,110 @@
+\subsection{Residual systematic effects} %% the biases that we observe in chapter 5
+\label{lab:Syst_ResidualEffecte}
+
+%* 1. Discuss scambled toy studies.
+%   Why we expect the average fit result to be zero,
+%   indead we observed it consistent with zero in toy sutdies.
+In Section~\ref{app:toys_signal_injected_scrambled} we tested our scrambled method on
+our toy samples. The toys consist of SM-like toys (No signals), and 
+signal-injected toys. In sidereal phase, the MS-like toys show data points
+are distributed according to only statistical fluctuation. The signal injected toys show 
+some oscillations correspond to injected signal shape.
+
+The figure~\ref{fig:SM_like_toy_scrambled} shows a comparison of a SM-like toy before (left) and
+and after scrambled (right). We can see that the scrambled toy is just like an original one,
+it's also SM-like toy. In the same way we tested the scrambling on 1000 SM-like toys. 
+The figure~\ref{fig:SM_like_toy_fit_results12} shows average of 1000 fitted results and their one/two 
+sigma standard deviation. The left plot shows the results from SM-like toys before scrambling,
+and the right plot shows the results after apply scrambling.
+As we expected, in both case, average fit result on each coefficeint is in a good 
+agreement with zero. Because, in SM-like toy datasets we have only 
+simulated statistical uncertainties. Therefore, we expect no bias 
+(average fit result consistent with zero).
+
+In signal injected case, scrambling can completely washed the injected singal. 
+The figure~\ref{fig:signal_injected_toy_p003_beforeAfter_scramble} show the compareson 
+of before and after scrambling of an siganl injected toy sample. In the left plot we clearly 
+see the oscillation pateren, but in the right plot after scrambling we didn't observe presence 
+of any signals. After scrambing the fitted signal strength down to $-4.4E^{-7}\pm 3.8E^{-6}$;
+ it was $5.3E^{-5}\pm 3.8E^{-6}$ before scrambling. This study concluded that event 
+ if a singal is present the scrambling can wash it.
+Also, if a dataset has only statistical uncertaity (e.g other systematics effects are negligible),
+we can still expect that the fitted signal strength after scrambling will be 
+consistent with zere (e.g no bias will be seen).
+
+
+
+%* 2. Discuss the scrambled results from partially unblinded data.
+%   We have observed the average fit results in several coefficients
+%   diviate from zero at the order of one(or less) STD level. This is
+%   different than what we learned from toy studies.
+However, when we check the data using scrambling (partially unblind), we observe 
+that average values of fit results in some singal strengths (coefficents) deviate 
+from zero (bias). This can be clearly seen in figure~\ref{fig:real_data_scrambled_summary_combined}
+where Run 2 - combined fit results are presented. In the plot, each black dot is an average fit results 
+of 1000 scrabled datasets. In a few coefficents we observed the average fit results deviate from zero
+but still within one sigma range. The exact numbers can be read from the table~\ref{table:scrambel_results_ll}.
+This kind of deviation indicate that there is a systematic effact other than statisticle fluctuation. 
+Because, as we expected from our toy studies we discussed before, if the statistical fluctuation is the 
+only source of uncertainty then we should observe results from scrambled dataset also consistent with zero.
+
+%* 3. The difference between the average fit result and zero (zero is
+%    the theory expectation) in each coefficient can be a measurement of
+%    spurious signal uncertaity. 
+The deviation from zero in each coefficeint shown in figure~\ref{fig:real_data_scrambled_summary_combined} can be seen
+as size of spurious signal uncertainty for corresponding coefficent.
+ The spurious signal is models as Gaussian distribution centered at zero and it standard deviation
+  is absolute values of average fit results (size of the deviation from zero) shown in figure~\ref{fig:real_data_scrambled_summary_combined}.
+  The size of spurious signals for Run 2 fit and Run 2 - combined fit are given in table~\ref{table:spurious_signal_ll}.
+  
+
+% Sys table
+%%%%%%%%%%%%%%%
+%%ee+uu channel%%%
+%%%%%%%%%%%%%%%
+\begin{table}[hp]
+  \begin{center}
+  %%\resizebox{\textwidth}{!}{
+  \begin{tabular}{|l|c| c| c| c |c|}
+  \hline
+   & Run2 & Run2-Comb. Fit \\
+  \hline
+  $d_{\it u}^{\it X,Z}$   & -3.23e-06 & -2.99e-06  \\
+  \hline
+  $d_{\it u}^{\it Y,Z}$   & -1.69e-06  & -2.5e-06  \\
+  \hline
+  $d_{\it u}^{\it XY,XY}$ & 8.03e-07  & -2.39e-07  \\
+  \hline
+  $d_{\it u}^{\it X,Y}$  & 3.21e-07  & 1.41e-07  \\
+  \hline
+  $c_{\it u}^{\it X,Z}$  & -2.51e-06  & -2.32e-06 \\
+  \hline
+  $c_{\it u}^{\it Y,Z}$  & -1.32e-06  & -1.94e-06  \\
+  \hline
+  $c_{\it u}^{\it XY,XY}$ & 6.24e-07  & -1.86e-07  \\
+  \hline
+  $c_{\it u}^{\it X,Y}$  & 2.50e-07  & 1.09e-07 \\
+  \hline
+  $c_{\it d}^{\it X,Z}$  & -1.12e-04  & -1.03e-04 \\
+  \hline
+  $c_{\it d}^{\it Y,Z}$  & -5.86e-05 & -8.66e-05  \\
+  \hline
+  $c_{\it d}^{\it XY,XY}$  & 2.78e-05 & -8.27e-06 \\
+  \hline
+  $c_{\it d}^{\it X,Y}$ & 1.11e-05 & 4.86e-06 \\
+  \hline
+  \hline
+  \end{tabular}
+  \end{center}
+  \caption{
+  Size of spurious signal uncertainties in $ee+\mu\mu$ channel, for Run 2 fit (first column) 
+  and Run 2 - combined fit (second column, obtained from 10K samples).
+  }\label{table:spurious_signal_ll}
+  \end{table}
+
+%%% Copy profiled X2 fit to here?
+
+
+
+
+

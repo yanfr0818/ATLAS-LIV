@@ -12,15 +12,15 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Tuple, Dict, List, Optional
 
-# 12 SME coefficients (4 per quark type: u, c, d)
+# 4 Independent Harmonic Structures (Sidereal)
+# XZ, YZ, XX-YY, XY
 SME_COEFFICIENTS = (
-    "duXZ", "duYZ", "duXXYY", "duXY",
-    "cuXZ", "cuYZ", "cuXXYY", "cuXY",
-    "cdXZ", "cdYZ", "cdXXYY", "cdXY",
+    "XZ", "YZ", "XX_YY", "XY"
 )
 
-# Display exponents for scaling coefficients to O(1) values
-SME_DISPLAY_EXPONENTS = (6, 6, 6, 7, 6, 6, 6, 7, 4, 4, 5, 5)
+# Display exponents for scaling coefficients
+# Placeholder values, assuming O(1) for now or similar to previous
+SME_DISPLAY_EXPONENTS = (0, 0, 0, 0)
 
 
 def sme_template(name: str, phi: np.ndarray) -> np.ndarray:
@@ -30,50 +30,37 @@ def sme_template(name: str, phi: np.ndarray) -> np.ndarray:
     The linear model is: RD(phi) ≈ 1 + c * f(phi)
     where c is the SME coefficient being fitted.
     
-    These templates are derived from the physics of LIV and depend on
-    the detector's latitude, orientation, and the specific SME operator.
-    Coefficients are from Enrico's Mathematica notebook (tag11.nb In[59]).
+    These harmonics are defined as:
+    XZ:      cos(omega * T + 1.419)
+    YZ:      cos(omega * T + 0.152)
+    XX_YY:   cos(2*omega * T + 0.304)
+    XY:      cos(2*omega * T + 1.874)
+    
+    where omega * T = 2 * pi * phi (since phi = T / Period)
     
     Args:
-        name: SME coefficient name (e.g., 'duXZ', 'cuYZ')
+        name: Coefficient name ('XZ', 'YZ', 'XX_YY', 'XY')
         phi: Phase values in [0, 1)
         
     Returns:
         Template function evaluated at each phi
     """
     phi = np.asarray(phi, dtype=float)
-    x2 = 2.0 * np.pi * phi  # 2π * φ for period-2 terms
-    x4 = 4.0 * np.pi * phi  # 4π * φ for period-4 terms
+    x = 2.0 * np.pi * phi  # 1*omega*T
+    x2 = 4.0 * np.pi * phi # 2*omega*T
     
-    # du (up quark d-type coefficients)
-    if name == "duXZ":
-        return 6.28069 * np.cos(x2) - 41.0569 * np.sin(x2)
-    if name == "duYZ":
-        return 41.0569 * np.cos(x2) + 6.28069 * np.sin(x2)
-    if name == "duXXYY":
-        return 77.6067 * np.cos(x4) + 24.3128 * np.sin(x4)
-    if name == "duXY":
-        return -48.6256 * np.cos(x4) + 155.213 * np.sin(x4)
-    
-    # cu (up quark c-type coefficients)
-    if name == "cuXZ":
-        return 8.084 * np.cos(x2) - 52.8451 * np.sin(x2)
-    if name == "cuYZ":
-        return 52.8451 * np.cos(x2) + 8.084 * np.sin(x2)
-    if name == "cuXXYY":
-        return 99.8891 * np.cos(x4) + 31.2935 * np.sin(x4)
-    if name == "cuXY":
-        return -62.5869 * np.cos(x4) + 199.778 * np.sin(x4)
-    
-    # cd (down quark c-type coefficients)
-    if name == "cdXZ":
-        return 0.181551 * np.cos(x2) - 1.1868 * np.sin(x2)
-    if name == "cdYZ":
-        return 1.1868 * np.cos(x2) + 0.181551 * np.sin(x2)
-    if name == "cdXXYY":
-        return 2.24331 * np.cos(x4) + 0.702788 * np.sin(x4)
-    if name == "cdXY":
-        return -1.40558 * np.cos(x4) + 4.48662 * np.sin(x4)
+    if name == "XZ":
+        # cos(x + 1.419)
+        return np.cos(x + 1.419)
+    if name == "YZ":
+        # cos(x + 0.152)
+        return np.cos(x + 0.152)
+    if name == "XX_YY":
+        # cos(2x + 0.304)
+        return np.cos(x2 + 0.304)
+    if name == "XY":
+        # cos(2x + 1.874)
+        return np.cos(x2 + 1.874)
     
     raise KeyError(f"Unknown SME coefficient '{name}'")
 

@@ -6,47 +6,47 @@ Cross-check Set 3 data using the official ATLAS Z-counting formula from
 ATL-DAPR-PUB-2021-001 (ATLAS Note).
 
 EQUATION (2) - Master Formula:
-    L_Z = N_Z × (1 - f_bkg) / (σ_theory × A_MC × ε_T&P × F_MC × t)
+    L_Z = N_Z * (1 - f_bkg) / (sigma_theory * A_MC * eps_T&P * F_MC * t)
 
 Where:
     - N_Z = raw Z count per LB (ZeeRaw or ZmumuRaw in Set3)
     - f_bkg = 0.005 (background fraction from diboson + ttbar)
-    - σ_theory = 1970 pb (inclusive Z→ll cross-section for m_ll > 60 GeV)
+    - sigma_theory = 1970 pb (inclusive Z->ll cross-section for m_ll > 60 GeV)
     - A_MC = acceptance factor (fiducial phase space)
-    - ε_T&P = event-level efficiency from tag-and-probe
+    - eps_T&P = event-level efficiency from tag-and-probe
     - F_MC = pileup-dependent MC correction factor
     - t = LB duration (LBLive in Set3)
 
 EQUATION (5) - Combined Efficiency:
-    ε_Z = (1 - (1 - ε_trig)²) × ε_reco²
+    eps_Z = (1 - (1 - eps_trig)^2) * eps_reco^2
 
 Set3 Column Mapping:
-    - ZeeRaw → N_Z for electrons
-    - ZeeEffTrig → ε_trig (trigger efficiency)
-    - ZeeEffReco → ε_reco (reconstruction efficiency)
-    - ZeeEffComb → ε_T&P (combined event-level efficiency)
-    - ZeeEffAComb → A × ε_T&P (acceptance × efficiency)
-    - ZeeLumi → L_Z (luminosity in nb^-1)
+    - ZeeRaw -> N_Z for electrons
+    - ZeeEffTrig -> eps_trig (trigger efficiency)
+    - ZeeEffReco -> eps_reco (reconstruction efficiency)
+    - ZeeEffComb -> eps_T&P (combined event-level efficiency)
+    - ZeeEffAComb -> A * eps_T&P (acceptance * efficiency)
+    - ZeeLumi -> L_Z (luminosity in nb^-1)
 """
 
 import pandas as pd
 import numpy as np
 
-DATA_PATH = r"D:\HEP\ATLAS\LIV\Set3\data2018_shuffled_3.csv"
+DATA_PATH = r"Set3\data2018_shuffled_3.csv"
 
 # Constants from ATLAS note
-SIGMA_THEORY = 1970  # pb, inclusive Z→ll cross-section for m_ll > 60 GeV
+SIGMA_THEORY = 1970  # pb, inclusive Z->ll cross-section for m_ll > 60 GeV
 F_BKG = 0.005  # Background fraction
 
 
 def compute_efficiency_from_eq5(eff_trig, eff_reco):
     """
     Equation (5) from ATLAS note:
-    ε_Z = (1 - (1 - ε_trig)²) × ε_reco²
+    eps_Z = (1 - (1 - eps_trig)^2) * eps_reco^2
     
     This considers:
-    - At least one of two leptons triggers (1 - (1-ε)²)
-    - Both leptons pass reconstruction (ε²)
+    - At least one of two leptons triggers (1 - (1-eps)^2)
+    - Both leptons pass reconstruction (eps^2)
     """
     eff_trig_event = 1 - (1 - eff_trig)**2  # At least one triggers
     eff_reco_event = eff_reco**2  # Both reconstructed
@@ -56,16 +56,16 @@ def compute_efficiency_from_eq5(eff_trig, eff_reco):
 def derive_luminosity_formula_components(df):
     """
     From the ATLAS note, we have:
-        L = N × (1 - f_bkg) / (σ × A × ε × F × t)
+        L = N * (1 - f_bkg) / (sigma * A * eps * F * t)
     
     And the data contains:
         ZeeLumi = L (instantaneous luminosity)
         ZeeRaw = N
-        ZeeEffComb = ε (event-level efficiency)
-        ZeeEffAComb = A × ε (acceptance × efficiency)
+        ZeeEffComb = eps (event-level efficiency)
+        ZeeEffAComb = A * eps (acceptance * efficiency)
     
     So if we invert:
-        σ × A × F × t = N × (1 - f_bkg) / (L × ε)
+        sigma * A * F * t = N * (1 - f_bkg) / (L * eps)
     
     Since we're computing instantaneous lumi (not per-second), 
     the formula simplifies.
@@ -75,13 +75,13 @@ def derive_luminosity_formula_components(df):
     print("=" * 60)
     print("STEP 1: VERIFY EQUATION (5) - Combined Efficiency")
     print("=" * 60)
-    print("Formula: ε_Z = (1 - (1 - ε_trig)²) × ε_reco²")
+    print("Formula: eps_Z = (1 - (1 - eps_trig)^2) * eps_reco^2")
     print()
     
     eff_calc = compute_efficiency_from_eq5(df['ZeeEffTrig'], df['ZeeEffReco'])
     eff_diff = eff_calc - df['ZeeEffComb']
     
-    print(f"Calculated ε (eq.5) vs ZeeEffComb:")
+    print(f"Calculated eps (eq.5) vs ZeeEffComb:")
     print(f"  Mean difference: {eff_diff.mean():.6f}")
     print(f"  Std difference:  {eff_diff.std():.6f}")
     print(f"  Max |diff|:      {eff_diff.abs().max():.6f}")
@@ -101,38 +101,38 @@ def derive_luminosity_formula_components(df):
 def derive_acceptance_and_mc_factor(df, eff_calc):
     """
     From the data:
-        ZeeEffAComb = A_MC × ε_T&P × F_MC
+        ZeeEffAComb = A_MC * eps_T&P * F_MC
     
     So:
-        A × F = ZeeEffAComb / ε_T&P
+        A * F = ZeeEffAComb / eps_T&P
     
     Also, the luminosity formula gives us:
-        ZeeLumi [nb^-1] = ZeeRaw × (1 - f_bkg) / (σ × A × ε × F)
+        ZeeLumi [nb^-1] = ZeeRaw * (1 - f_bkg) / (sigma * A * eps * F)
         
     Rearranging:
-        σ × A × F = ZeeRaw × (1 - f_bkg) / (ZeeLumi × ε)
+        sigma * A * F = ZeeRaw * (1 - f_bkg) / (ZeeLumi * eps)
     """
     print("=" * 60)
-    print("STEP 2: DERIVE ACCEPTANCE × MC FACTOR")
+    print("STEP 2: DERIVE ACCEPTANCE * MC FACTOR")
     print("=" * 60)
     
     # Method 1: From ZeeEffAComb / ZeeEffComb
     A_x_F_from_eff = df['ZeeEffAComb'] / df['ZeeEffComb']
-    print(f"Method 1: A×F = ZeeEffAComb / ZeeEffComb")
+    print(f"Method 1: A*F = ZeeEffAComb / ZeeEffComb")
     print(f"  Mean: {A_x_F_from_eff.mean():.6f}")
     print(f"  Std:  {A_x_F_from_eff.std():.6f}")
     
     # Method 2: From luminosity formula
-    # σ × A × F = N × (1 - f_bkg) / (L × ε)
-    # A × F = N × (1 - f_bkg) / (L × ε × σ)
+    # sigma * A * F = N * (1 - f_bkg) / (L * eps)
+    # A * F = N * (1 - f_bkg) / (L * eps * sigma)
     sigma_pb = SIGMA_THEORY  # pb
     sigma_nb = sigma_pb / 1000  # convert to nb (1 nb = 1000 pb)
     
-    # ZeeLumi is in nb^-1, so we need σ in nb
+    # ZeeLumi is in nb^-1, so we need sigma in nb
     A_x_F_from_lumi = (df['ZeeRaw'] * (1 - F_BKG)) / (df['ZeeLumi'] * df['ZeeEffComb'] * sigma_nb)
     
-    print(f"\nMethod 2: From luminosity formula with σ = {SIGMA_THEORY} pb = {sigma_nb} nb")
-    print(f"  A×F = N × (1-f_bkg) / (L × ε × σ)")
+    print(f"\nMethod 2: From luminosity formula with sigma = {SIGMA_THEORY} pb = {sigma_nb} nb")
+    print(f"  A*F = N * (1-f_bkg) / (L * eps * sigma)")
     print(f"  Mean: {A_x_F_from_lumi.mean():.6f}")
     print(f"  Std:  {A_x_F_from_lumi.std():.6f}")
     
@@ -143,7 +143,7 @@ def derive_acceptance_and_mc_factor(df, eff_calc):
 def validate_full_formula(df, A_x_F):
     """
     Validate the full luminosity formula:
-        ZeeLumi = ZeeRaw × (1 - f_bkg) / (σ × A × ε × F)
+        ZeeLumi = ZeeRaw * (1 - f_bkg) / (sigma * A * eps * F)
     """
     print("=" * 60)
     print("STEP 3: VALIDATE FULL LUMINOSITY FORMULA")
@@ -152,13 +152,13 @@ def validate_full_formula(df, A_x_F):
     sigma_nb = SIGMA_THEORY / 1000  # Convert pb to nb
     
     # Compute ZeeLumi using the formula
-    # Using ZeeEffAComb which already includes A × ε × F
+    # Using ZeeEffAComb which already includes A * eps * F
     zl_derived = (df['ZeeRaw'] * (1 - F_BKG)) / (sigma_nb * df['ZeeEffAComb'])
     
     residual = (zl_derived - df['ZeeLumi']) / df['ZeeLumi']
     
-    print(f"Formula: ZeeLumi = ZeeRaw × (1 - f_bkg) / (σ × ZeeEffAComb)")
-    print(f"         with σ = {SIGMA_THEORY} pb = {sigma_nb:.3f} nb")
+    print(f"Formula: ZeeLumi = ZeeRaw * (1 - f_bkg) / (sigma * ZeeEffAComb)")
+    print(f"         with sigma = {SIGMA_THEORY} pb = {sigma_nb:.3f} nb")
     print()
     print(f"Residual (derived - actual) / actual:")
     print(f"  Mean:  {residual.mean()*100:+.4f}%")
@@ -195,7 +195,7 @@ def main():
     # Step 1: Verify equation (5)
     eff_calc = derive_luminosity_formula_components(df)
     
-    # Step 2: Derive A × F
+    # Step 2: Derive A * F
     A_F_eff, A_F_lumi = derive_acceptance_and_mc_factor(df, eff_calc)
     
     # Step 3: Validate full formula
@@ -209,25 +209,25 @@ def main():
     print()
     print("The ATLAS Z-counting formula is:")
     print()
-    print("  L_Z = N_Z × (1 - f_bkg) / (σ × A × ε × F)")
+    print("  L_Z = N_Z * (1 - f_bkg) / (sigma * A * eps * F)")
     print()
     print("Where in Set3 data:")
     print(f"  - N_Z = ZeeRaw (raw Z count)")
     print(f"  - f_bkg = {F_BKG} (background fraction)")
-    print(f"  - σ = {SIGMA_THEORY} pb = 1.970 nb (theory cross-section)")
-    print(f"  - A × ε × F = ZeeEffAComb (acceptance × eff × MC correction)")
+    print(f"  - sigma = {SIGMA_THEORY} pb = 1.970 nb (theory cross-section)")
+    print(f"  - A * eps * F = ZeeEffAComb (acceptance * eff * MC correction)")
     print()
     print("This simplifies to:")
-    print("  ZeeLumi = ZeeRaw × 0.995 / (1.970 × ZeeEffAComb)")
+    print("  ZeeLumi = ZeeRaw * 0.995 / (1.970 * ZeeEffAComb)")
     print()
     
     # Final validation
     mean_resid = residual.mean() * 100
     std_resid = residual.std() * 100
     if abs(mean_resid) < 0.1 and std_resid < 1.0:
-        print("✓ VALIDATION PASSED: Formula matches within statistical uncertainty")
+        print("MATCHED VALIDATION PASSED: Formula matches within statistical uncertainty")
     else:
-        print(f"⚠ VALIDATION: Mean residual = {mean_resid:.4f}%, Std = {std_resid:.4f}%")
+        print(f"WARNING VALIDATION: Mean residual = {mean_resid:.4f}%, Std = {std_resid:.4f}%")
 
 
 if __name__ == "__main__":

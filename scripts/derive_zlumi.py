@@ -15,7 +15,7 @@ Cross-section constants (derived from data):
 import pandas as pd
 import numpy as np
 
-DATA_PATH = r"D:\HEP\ATLAS\LIV\Set3\data2018_shuffled_3.csv"
+DATA_PATH = r"Set3\data2018_shuffled_3.csv"
 
 def derive_cross_sections(df):
     """Derive the effective cross-sections from the data."""

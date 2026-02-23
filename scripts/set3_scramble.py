@@ -77,8 +77,8 @@ def iter_scrambles(base: pd.DataFrame, n: int, seed: int, direct_seed: int = Non
 def main():
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--indir", required=True, help="Directory with Set3 CSV files")
-    ap.add_argument("--outdir", required=True, help="Output directory")
+    ap.add_argument("--indir", default='input', help="Input directory")
+    ap.add_argument("--outdir", default='output/scrambles_pq', help="Output directory")
     ap.add_argument("--n", type=int, default=10, help="Number of scrambles")
     ap.add_argument("--seed", type=int, default=12345, help="Random seed (master seed)")
     ap.add_argument("--direct_seed", type=int, default=None, 
@@ -89,30 +89,50 @@ def main():
         print(f"Using DIRECT SEED: {args.direct_seed} (generating 1 scramble)")
         args.n = 1
     
-    base = load_and_combine_set3(args.indir)
-    if base.empty:
-        print("No data loaded, exiting.")
-        return
-    
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    
+    # Load combined data (Set 3)
+    # Changed to read parquet directly
+    fpath = Path(args.indir) / "set3_pruned.parquet"
+    if not fpath.exists():
+        print(f"Error: {fpath} not found.")
+        return
+        
+    df_base = pd.DataFrame()
+    try:
+        # Try reading parquet
+        df_base = pd.read_parquet(fpath)
+        print(f"Loaded {len(df_base)} LBs from {fpath}")
+    except ImportError:
+        print("Error: Pandas Parquet engine missing. Please install 'pyarrow' or 'fastparquet'.")
+        print("CRITICAL: Cannot read parquet. Parquet engine missing.")
+        return
+    except Exception as e:
+        print(f"Error reading parquet file {fpath}: {e}")
+        return
+
+    if df_base.empty:
+        print("No data loaded, exiting.")
+        return
     
     # Write manifest
     manifest = {
         "n_scrambles": args.n,
         "seed": args.seed,
-        "fixed_columns": FIXED_COLS,
+        "fixed_columns": ['LBStart', 'LBEnd'], # Updated to reflect new fixed columns
         "method": "across_year",
-        "total_rows": len(base),
-        "source_years": YEARS,
+        "total_rows": len(df_base),
+        "source_file": str(fpath), # Changed from source_years
     }
     (outdir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     
     # Generate scrambles - each is a single combined CSV
-    for i, scr_df in iter_scrambles(base, args.n, args.seed, args.direct_seed):
-        out_path = outdir / f"scramble_{i:04d}.csv"
-        scr_df.to_csv(out_path, index=False)
-        print(f"Generated scramble {i+1}/{args.n}: {out_path.name}")
+    for i, scr_df in iter_scrambles(df_base, args.n, args.seed, args.direct_seed):
+        out_path = outdir / f"scramble_{i:04d}.parquet"
+        scr_df.to_parquet(out_path, index=False)
+        if (i+1) % 100 == 0:
+            print(f"Generated scramble {i+1}/{args.n}: {out_path.name}")
     
     print(f"Done. {args.n} scrambles in {outdir}")
 

@@ -35,217 +35,98 @@ from run_batch_analysis import compute_double_ratio_and_fit
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--coeff', default='duYZ', help='SME coefficient to study')
-    ap.add_argument('--n_scrambles', type=int, default=100, help='Number of scrambles to average over')
-    ap.add_argument('--outdir', default='output/plots_analysis', help='Output directory')
+    ap.add_argument('--coeff', default='all', help='Harmonic Structure to study (XZ, YZ, XX_YY, XY, or all)')
+    ap.add_argument('--n_scrambles', type=int, default=200, help='Number of scrambles to average over')
+    ap.add_argument('--outdir', default='output/plots_linearity_scramble', help='Output directory')
     ap.add_argument('--n_points', type=int, default=11, help='Number of signal strength points (including 0)')
-    ap.add_argument('--max_strength', type=float, default=1e-4, help='Maximum signal strength')
+    ap.add_argument('--max_strength', type=float, default=2e-4, help='Maximum signal strength')
     args = ap.parse_args()
 
-    coeff = args.coeff
+    coeffs_to_run = list(SME_COEFFICIENTS) if args.coeff == 'all' else [args.coeff]
     n_scrambles = args.n_scrambles
+    
     outdir = Path(args.outdir)
-    outdir.mkdir(exist_ok=True)
+    outdir.mkdir(parents=True, exist_ok=True)
 
     # Signal strengths: evenly spaced from 0 to max_strength
     signal_strengths = np.linspace(0, args.max_strength, args.n_points)
     n_strengths = len(signal_strengths)
 
-    print(f"Linearity Study: coeff={coeff}, n_scrambles={n_scrambles}")
-    print(f"Signal strengths (linear): {signal_strengths}")
-
-    # Load scrambles
+    # Load scrambles (load once)
     files = sorted(glob.glob("output/scrambles_pq/scramble_*.parquet"))[:n_scrambles]
     if len(files) < n_scrambles:
         print(f"Warning: Only {len(files)} scrambles available, requested {n_scrambles}")
         n_scrambles = len(files)
+        
+    print(f"Loading {n_scrambles} scrambles into memory...")
+    scrambles = [pd.read_parquet(f) for f in files]
+    print("Loaded.")
 
-    # Storage: [strength_idx, scramble_idx]
-    fitted_values = np.zeros((n_strengths, n_scrambles))
+    for coeff in coeffs_to_run:
+        print(f"\nRunning Linearity Study (Scrambles) for {coeff}...")
+        
+        # Storage: [strength_idx, scramble_idx]
+        fitted_values = np.zeros((n_strengths, n_scrambles))
 
-    for s_idx, fpath in enumerate(files):
-        df = pd.read_parquet(fpath)
+        for s_idx, df in enumerate(scrambles):
+            for str_idx, inj_val in enumerate(signal_strengths):
+                if inj_val == 0:
+                    df_use = df
+                else:
+                    df_use = inject_signal(df, coeff, inj_val)
 
-        for str_idx, inj_val in enumerate(signal_strengths):
-            if inj_val == 0:
-                # No injection
-                df_use = df
-            else:
-                # Inject signal
-                df_use = inject_signal(df, coeff, inj_val)
+                # Fit
+                res = compute_double_ratio_and_fit(df_use)
+                fitted_values[str_idx, s_idx] = res['fits'][coeff]['value']
 
-            # Fit
-            res = compute_double_ratio_and_fit(df_use)
-            fitted_values[str_idx, s_idx] = res['fits'][coeff]['value']
+            if (s_idx + 1) % 50 == 0:
+                print(f"  Processed {s_idx + 1}/{n_scrambles} scrambles...")
 
-        if (s_idx + 1) % 10 == 0:
-            print(f"  Processed {s_idx + 1}/{n_scrambles} scrambles...")
+        # Compute statistics
+        fitted_mean = np.mean(fitted_values, axis=1)
+        fitted_std = np.std(fitted_values, axis=1, ddof=1)
+        fitted_err = fitted_std / np.sqrt(n_scrambles)  # SEM
 
-    # Compute statistics
-    fitted_mean = np.mean(fitted_values, axis=1)
-    fitted_std = np.std(fitted_values, axis=1, ddof=1)
-    fitted_err = fitted_std / np.sqrt(n_scrambles)  # SEM
+        plot_linearity(coeff, signal_strengths, fitted_mean, fitted_err, outdir, n_scrambles)
 
-    print("\nResults:")
-    for i, inj in enumerate(signal_strengths):
-        print(f"  Injected={inj:.2e} -> Fitted={fitted_mean[i]:.2e} ± {fitted_err[i]:.2e}")
 
-    X = signal_strengths
-    Y = fitted_mean
-    w = 1.0 / (fitted_err**2 + 1e-30)  # Weights
-
-    # ========== FIT CASE 1: Fix slope=1, fit intercept ==========
-    # Model: Y = 1*X + b => Y - X = b
-    # Weighted mean of (Y - X)
-    residuals = Y - X
-    intercept_fixed_slope = np.sum(w * residuals) / np.sum(w)
-    intercept_fixed_slope_err = 1.0 / np.sqrt(np.sum(w))
-    chi2_fixed_slope = np.sum(w * (residuals - intercept_fixed_slope)**2)
-    ndof_fixed_slope = len(X) - 1
-
-    # ========== FIT CASE 2: Fix intercept=0, fit slope ==========
-    # Model: Y = m*X => Y/X = m (weighted)
-    # Weighted: sum(w*X*Y) / sum(w*X*X)
-    slope_fixed_int = np.sum(w * X * Y) / np.sum(w * X * X)
-    slope_fixed_int_err = 1.0 / np.sqrt(np.sum(w * X * X))
-    chi2_fixed_int = np.sum(w * (Y - slope_fixed_int * X)**2)
-    ndof_fixed_int = len(X) - 1
-
-    # ========== FIT CASE 3: Float both slope and intercept ==========
+def plot_linearity(coeff, x, y, yerr, outdir, n_scrambles):
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    # Weight linear regression
+    w = 1.0 / (yerr**2 + 1e-30)
     sum_w = np.sum(w)
-    sum_wx = np.sum(w * X)
-    sum_wy = np.sum(w * Y)
-    sum_wxx = np.sum(w * X * X)
-    sum_wxy = np.sum(w * X * Y)
-
+    sum_wx = np.sum(w*x)
+    sum_wy = np.sum(w*y)
+    sum_wxx = np.sum(w*x*x)
+    sum_wxy = np.sum(w*x*y)
+    
     denom = sum_w * sum_wxx - sum_wx**2
-    slope_float = (sum_w * sum_wxy - sum_wx * sum_wy) / denom
-    intercept_float = (sum_wxx * sum_wy - sum_wx * sum_wxy) / denom
-    slope_float_err = np.sqrt(sum_w / denom)
-    intercept_float_err = np.sqrt(sum_wxx / denom)
-    chi2_float = np.sum(w * (Y - slope_float * X - intercept_float)**2)
-    ndof_float = len(X) - 2
+    m = (sum_w * sum_wxy - sum_wx * sum_wy) / denom
+    c = (sum_wxx * sum_wy - sum_wx * sum_wxy) / denom
+    m_err = np.sqrt(sum_w / denom)
+    c_err = np.sqrt(sum_wxx / denom)
 
-    # Print results
-    print("\n" + "="*70)
-    print("FIT RESULTS:")
-    print("="*70)
-    print(f"\nCase 1: Fix slope=1, fit intercept")
-    print(f"  Intercept = {intercept_fixed_slope:.2e} ± {intercept_fixed_slope_err:.2e}")
-    print(f"  Chi2/ndof = {chi2_fixed_slope:.2f}/{ndof_fixed_slope} = {chi2_fixed_slope/ndof_fixed_slope:.2f}")
-
-    print(f"\nCase 2: Fix intercept=0, fit slope")
-    print(f"  Slope = {slope_fixed_int:.4f} ± {slope_fixed_int_err:.4f}")
-    print(f"  Chi2/ndof = {chi2_fixed_int:.2f}/{ndof_fixed_int} = {chi2_fixed_int/ndof_fixed_int:.2f}")
-
-    print(f"\nCase 3: Float both")
-    print(f"  Slope = {slope_float:.4f} ± {slope_float_err:.4f}")
-    print(f"  Intercept = {intercept_float:.2e} ± {intercept_float_err:.2e}")
-    print(f"  Chi2/ndof = {chi2_float:.2f}/{ndof_float} = {chi2_float/ndof_float:.2f}")
-    print("="*70)
-
-    # ========== PLOT 1: Intercept Study (Fix Slope=1) ==========
-    fig, ax = plt.subplots(figsize=(10, 7))
+    ax.errorbar(x, y, yerr=yerr, fmt='ko', label=f'Fitted (avg {n_scrambles} scrambles)')
     
-    ax.errorbar(X, Y, yerr=fitted_err, 
-                fmt='o', color='black', markersize=6, capsize=3,
-                label='Fitted (avg over scrambles)')
+    x_plot = np.array([x.min(), x.max()])
+    ax.plot(x_plot, m*x_plot + c, 'r-', label=f'Fit: y = {m:.3f}x + {c:.2e}')
+    ax.plot(x_plot, x_plot, 'b--', alpha=0.5, label='Ideal: y=x')
 
-    x_fit = np.linspace(0, args.max_strength, 100)
-    y_case1 = x_fit + intercept_fixed_slope
-    ax.plot(x_fit, y_case1, 'r-', linewidth=2, 
-            label=f'Fit: intercept = {intercept_fixed_slope:.2e} ± {intercept_fixed_slope_err:.2e}')
-    ax.plot(x_fit, x_fit, 'b--', linewidth=1, alpha=0.5, label='Ideal (intercept = 0)')
-
-    ax.set_xlabel('Injected Signal Strength', fontsize=12)
-    ax.set_ylabel('Fitted Signal Strength', fontsize=12)
-    ax.set_title(f'Intercept Study (Fix Slope=1): {coeff}\n(Averaged over {n_scrambles} scrambles, χ²/ndf = {chi2_fixed_slope:.1f}/{ndof_fixed_slope})', fontsize=14)
-    ax.legend(loc='upper left', fontsize=10)
+    ax.set_xlabel(f'Injected Signal ({coeff})')
+    ax.set_ylabel(f'Fitted Signal ({coeff})')
+    ax.set_title(f'Linearity (Scrambles, {n_scrambles} toys)\nSlope={m:.3f}±{m_err:.3f}, Int={c:.2e}±{c_err:.2e}')
+    ax.legend(loc='upper left')
     ax.grid(True, alpha=0.3)
-    ax.set_xlim(-args.max_strength * 0.05, args.max_strength * 1.05)
-    ax.set_ylim(min(Y.min(), -args.max_strength * 0.1), args.max_strength * 1.1)
-
-    outpath1 = outdir / f"intercept_study_{coeff}.pdf"
-    plt.tight_layout()
-    plt.savefig(outpath1, dpi=150)
-    plt.close()
-    print(f"\nWrote {outpath1}")
-
-    # ========== PLOT 2: Slope Study (Fix Intercept=0) ==========
-    fig, ax = plt.subplots(figsize=(10, 7))
     
-    ax.errorbar(X, Y, yerr=fitted_err, 
-                fmt='o', color='black', markersize=6, capsize=3,
-                label='Fitted (avg over scrambles)')
+    # Scientific notation
+    ax.ticklabel_format(style='sci', axis='both', scilimits=(0,0))
 
-    y_case2 = slope_fixed_int * x_fit
-    ax.plot(x_fit, y_case2, 'r-', linewidth=2, 
-            label=f'Fit: slope = {slope_fixed_int:.4f} ± {slope_fixed_int_err:.4f}')
-    ax.plot(x_fit, x_fit, 'b--', linewidth=1, alpha=0.5, label='Ideal (slope = 1)')
-
-    ax.set_xlabel('Injected Signal Strength', fontsize=12)
-    ax.set_ylabel('Fitted Signal Strength', fontsize=12)
-    ax.set_title(f'Slope Study (Fix Intercept=0): {coeff}\n(Averaged over {n_scrambles} scrambles, χ²/ndf = {chi2_fixed_int:.1f}/{ndof_fixed_int})', fontsize=14)
-    ax.legend(loc='upper left', fontsize=10)
-    ax.grid(True, alpha=0.3)
-    ax.set_xlim(-args.max_strength * 0.05, args.max_strength * 1.05)
-    ax.set_ylim(min(Y.min(), -args.max_strength * 0.1), args.max_strength * 1.1)
-
-    outpath2 = outdir / f"slope_study_{coeff}.pdf"
+    outpath = outdir / f"linearity_scramble_{coeff}.pdf"
     plt.tight_layout()
-    plt.savefig(outpath2, dpi=150)
+    plt.savefig(outpath, dpi=150)
     plt.close()
-    print(f"Wrote {outpath2}")
-
-    # ========== PLOT 3: Linearity Study (Both Float) ==========
-    fig, ax = plt.subplots(figsize=(10, 7))
-    
-    ax.errorbar(X, Y, yerr=fitted_err, 
-                fmt='o', color='black', markersize=6, capsize=3,
-                label='Fitted (avg over scrambles)')
-
-    y_case3 = slope_float * x_fit + intercept_float
-    ax.plot(x_fit, y_case3, 'r-', linewidth=2, 
-            label=f'Fit: slope = {slope_float:.4f} ± {slope_float_err:.4f}, int = {intercept_float:.2e} ± {intercept_float_err:.2e}')
-    ax.plot(x_fit, x_fit, 'b--', linewidth=1, alpha=0.5, label='Ideal (y = x)')
-
-    ax.set_xlabel('Injected Signal Strength', fontsize=12)
-    ax.set_ylabel('Fitted Signal Strength', fontsize=12)
-    ax.set_title(f'Linearity Study (Both Float): {coeff}\n(Averaged over {n_scrambles} scrambles, χ²/ndf = {chi2_float:.1f}/{ndof_float})', fontsize=14)
-    ax.legend(loc='upper left', fontsize=10)
-    ax.grid(True, alpha=0.3)
-    ax.set_xlim(-args.max_strength * 0.05, args.max_strength * 1.05)
-    ax.set_ylim(min(Y.min(), -args.max_strength * 0.1), args.max_strength * 1.1)
-
-    outpath3 = outdir / f"linearity_study_{coeff}.pdf"
-    plt.tight_layout()
-    plt.savefig(outpath3, dpi=150)
-    plt.close()
-    print(f"Wrote {outpath3}")
-
-    # Summary interpretation
-    print("\n" + "="*70)
-    print("INTERPRETATION:")
-    
-    # Case 1 interpretation
-    if abs(intercept_fixed_slope) < 3 * intercept_fixed_slope_err:
-        print("  Case 1: ✓ Intercept consistent with 0 (no spurious signal)")
-    else:
-        print(f"  Case 1: ⚠ Intercept = {intercept_fixed_slope:.1e} deviates from 0")
-
-    # Case 2 interpretation
-    if abs(slope_fixed_int - 1.0) < 3 * slope_fixed_int_err:
-        print("  Case 2: ✓ Slope consistent with 1.0 (correct sensitivity)")
-    else:
-        print(f"  Case 2: ⚠ Slope = {slope_fixed_int:.4f} deviates from 1.0")
-
-    # Case 3 interpretation
-    if abs(slope_float - 1.0) < 3 * slope_float_err and abs(intercept_float) < 3 * intercept_float_err:
-        print("  Case 3: ✓ Both slope and intercept consistent with ideal")
-    else:
-        print("  Case 3: ⚠ Check individual parameters above")
-
-    print("="*70)
+    print(f"Wrote {outpath}")
 
 
 if __name__ == '__main__':

@@ -21,6 +21,8 @@ Thumbs.db
 # Large data (if any added later)
 *.h5
 *.hdf5
+Set3/
+*.pdf
 
 # Keep these (not ignored):
 # - input/set3_pruned.parquet (source data)

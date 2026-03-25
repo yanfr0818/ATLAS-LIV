@@ -13,11 +13,11 @@ Methodology:
    - y: Normalized Double Ratio (Zll/Off / <Zll/Off> - 1)
    - w: 1/err^2
 4. Compute Lomb-Scargle Power Spectrum over a specified frequency range.
-5. Plot Power vs Frequency (in units of Sidereal Frequency).
+5. Plot Power vs Frequency (in units of f/f_sid).
 
 Usage:
     python run_frequency_scan.py --input_file input/set3_pruned.parquet
-    python run_frequency_scan.py --inject_test --test_freq 3.5
+    python run_frequency_scan.py --inject_test --test_freq 10
 """
 
 import argparse
@@ -27,12 +27,73 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from pathlib import Path
+from scipy.stats import norm
+
+
+# ---------------------------------------------------------------------------
+# ATLAS Style Configuration
+# ---------------------------------------------------------------------------
+def set_atlas_style():
+    """Apply ATLAS-style matplotlib rcParams."""
+    plt.rcParams.update({
+        # Font
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial', 'Helvetica', 'Liberation Sans'],
+        'font.size': 16,
+        'mathtext.fontset': 'custom',
+        'mathtext.rm': 'Arial',
+        'mathtext.it': 'Arial:italic',
+        'mathtext.bf': 'Arial:bold',
+
+        # Axes
+        'axes.linewidth': 1.5,
+        'axes.labelsize': 18,
+        'axes.titlesize': 18,
+
+        # Tick marks: inward, on all sides
+        'xtick.direction': 'in',
+        'ytick.direction': 'in',
+        'xtick.top': True,
+        'ytick.right': True,
+        'xtick.major.size': 8,
+        'xtick.minor.size': 4,
+        'ytick.major.size': 8,
+        'ytick.minor.size': 4,
+        'xtick.major.width': 1.2,
+        'xtick.minor.width': 0.8,
+        'ytick.major.width': 1.2,
+        'ytick.minor.width': 0.8,
+        'xtick.labelsize': 14,
+        'ytick.labelsize': 14,
+        'xtick.minor.visible': True,
+        'ytick.minor.visible': True,
+
+        # Legend
+        'legend.frameon': False,
+        'legend.fontsize': 14,
+
+        # Figure
+        'figure.figsize': (10, 7.5),
+        'figure.dpi': 150,
+
+        # No grid
+        'axes.grid': False,
+    })
+
+
+def add_atlas_label(ax, label_type='Internal', x=0.05, y=0.95):
+    """Add the 'ATLAS Internal' watermark and luminosity info."""
+    ax.text(x, y, r'$\bf{ATLAS}$' + f' {label_type}',
+            transform=ax.transAxes,
+            fontsize=18, va='top', ha='left')
+    ax.text(x, y - 0.07, r'$\sqrt{s} = 13$ TeV, 140 fb$^{-1}$',
+            transform=ax.transAxes,
+            fontsize=14, va='top', ha='left')
 
 # Sidereal Frequency Constants
 SIDEREAL_DAY_H = 23.9344696
 SECONDS_PER_HOUR = 3600.0
 SIDEREAL_DAY_S = SIDEREAL_DAY_H * SECONDS_PER_HOUR
-OMEGA_SID = 2 * np.pi / SIDEREAL_DAY_S
 F_SID = 1.0 / SIDEREAL_DAY_S  # Hz (~1.16e-5 Hz)
 
 
@@ -155,146 +216,167 @@ def lomb_scargle_numpy(t, y, freqs):
     return power
 
 
-def run_lomb_scargle(t, y, w, min_f_sid=0.1, max_f_sid=10.0, n_freq=10000):
+def run_lomb_scargle(t, y, w, min_period_s=1.0, max_period_s=10000.0, n_freq=10000,
+                     min_f_sid=None, max_f_sid=None):
     """
     Run Lomb-Scargle periodogram.
-    Range: [min_f_sid, max_f_sid] in units of sidereal frequency.
+    Accepts period range (min_period_s, max_period_s) in seconds,
+    or frequency range (min_f_sid, max_f_sid) in sidereal units
+    for backward compatibility.
     """
-    # Define frequency grid
+    # Define frequency grid (log-spaced for even density across decades)
     t_span = t.max() - t.min()
     
-    f_min = min_f_sid * F_SID
-    f_max = max_f_sid * F_SID
-    df = (f_max - f_min) / n_freq
+    if min_f_sid is not None and max_f_sid is not None:
+        # Backward compatibility: frequency in sidereal units
+        f_min = min_f_sid * F_SID
+        f_max = max_f_sid * F_SID
+        min_period_s = 1.0 / f_max
+        max_period_s = 1.0 / f_min
+    else:
+        f_min = 1.0 / max_period_s
+        f_max = 1.0 / min_period_s
     
     print(f"Time span: {t_span/86400:.1f} days")
-    print(f"Frequency Scan: {f_min:.2e} Hz to {f_max:.2e} Hz")
-    print(f"Resolution approx: {df:.2e} Hz")
-    print(f"Grid size: {n_freq} points")
+    print(f"Period Scan: {min_period_s:.1f} to {max_period_s:.1f} s")
+    print(f"  = {f_min:.2e} Hz to {f_max:.2e} Hz")
+    print(f"Grid size: {n_freq} points (log-spaced)")
     
-    freqs = np.linspace(f_min, f_max, n_freq)
+    freqs = np.logspace(np.log10(f_min), np.log10(f_max), n_freq)
     
-
-
+    ls_object = None
     try:
         from astropy.timeseries import LombScargle
-        print("Using Astropy Lomb-Scargle (O(N log N) fast method).")
-        # astropy takes cyclic frequency rather than angular frequency.
-        # freqs array is already cyclic (f)
+        print("Using Astropy Lomb-Scargle.")
         
         # Determine dy for weighting. If w is 1/sigma^2, then sigma = 1/sqrt(w)
-        # Note: if w=0 or inf, we'd need to clean it. Let's ensure valid weights.
         dy = 1.0 / np.sqrt(w + 1e-30)
         
-        # LombScargle class structure
         ls = LombScargle(t, y, dy=dy)
+        ls_object = ls
         
         import time
         start_t = time.time()
         
-        # 'fast' method uses O(N log N) extirpation and FFT.
-        power = ls.power(freqs, method='fast')
+        # 'auto' selects the best method for the grid (exact for log-spaced)
+        power = ls.power(freqs, method='auto')
         
         elapsed = time.time() - start_t
-        print(f"Computed {len(freqs)} frequencies in {elapsed:.2f}s using 'fast' algorithm.")
+        print(f"Computed {len(freqs)} frequencies in {elapsed:.2f}s.")
         
     except ImportError:
         print("Astropy not found. Please install astropy for acceptable performance over large grids.")
         print("Falling back to Numpy implementation (will be VERY slow).")
         power = lomb_scargle_numpy(t, y, freqs)
         power = power / len(t)
-        print("Scipy not found. Using Custom Numpy Lomb-Scargle.")
-        power = lomb_scargle_numpy(t, y, freqs)
-        power = power / len(t)
         
-    return freqs, power
+    return freqs, power, ls_object
 
 
-def plot_spectrum_single(freqs, power, outdir, prefix, max_f_sid, title_prefix, label=None, zoom_center=None, zoom_width=2.0):
-    # Convert x-axis to Sidereal Frequencies
-    freq_sid_units = freqs / F_SID
+def plot_spectrum_single(freqs, power, outdir, prefix, label=None):
+    periods = 1.0 / freqs  # Convert to period in seconds
     
-    def _make_plot(suffix="", xlim=None):
-        fig, ax = plt.subplots(figsize=(12, 6))
-        
-        # Plot power
-        if label:
-            ax.plot(freq_sid_units, power, color='cornflowerblue', lw=0.8, label=label)
-            ax.legend()
-        else:
-            ax.plot(freq_sid_units, power, color='cornflowerblue', lw=0.8)
-            
-        # Annotate integer harmonics
-        for i in range(1, int(max_f_sid) + 1):
-            if i > 10 and xlim is None: break # Only mark low harmonics on full plot
-            if xlim and not (xlim[0] <= i <= xlim[1]): continue
-            ax.axvline(i, color='r', alpha=0.3, ls='--', lw=0.8)
-            
-        ax.set_xlabel(r"Frequency ($f / f_{sid}$)")
-        ax.set_ylabel("Power")
-        ax.set_title(f"Lomb-Scargle Periodogram - {title_prefix}")
-        
-        if xlim:
-            ax.set_xlim(*xlim)
-        else:
-            ax.set_xlim(max(0, freq_sid_units.min()), freq_sid_units.max())
-            
-        ax.grid(True, alpha=0.3)
-        
-        outpath = outdir / f"frequency_spectrum_{prefix}{suffix}.pdf"
-        plt.tight_layout()
-        plt.savefig(outpath)
-        plt.close()
-        print(f"Saved {outpath}")
-
-    # Full plot
-    _make_plot()
+    fig, ax = plt.subplots()
     
-    # Zoomed plot
-    if zoom_center is not None:
-        _make_plot(suffix="_zoomed", xlim=(zoom_center - zoom_width/2, zoom_center + zoom_width/2))
-
-
-def plot_spectrum_multi(freqs, spectra, outdir, prefix, max_f_sid, title_prefix, zoom_center=None, zoom_width=2.0):
-    # Convert x-axis to Sidereal Frequencies
-    freq_sid_units = freqs / F_SID
-    
-    def _make_plot(suffix="", xlim=None):
-        fig, ax = plt.subplots(figsize=(12, 6))
-        
-        for label, power in spectra:
-            ax.plot(freq_sid_units, power, lw=0.8, alpha=0.8, label=str(label))
-        
-        # Annotate integer harmonics
-        for i in range(1, int(max_f_sid) + 1):
-            if i > 10 and xlim is None: break # Only mark low harmonics on full plot
-            if xlim and not (xlim[0] <= i <= xlim[1]): continue
-            ax.axvline(i, color='cornflowerblue', alpha=0.5, ls='--', lw=0.8)
-            
-        ax.set_xlabel(r"Frequency ($f / f_{sid}$)")
-        ax.set_ylabel("Power")
-        ax.set_title(f"Lomb-Scargle Periodogram - {title_prefix}")
-        
-        if xlim:
-            ax.set_xlim(*xlim)
-        else:
-            ax.set_xlim(freq_sid_units.min(), freq_sid_units.max())
-            
-        ax.grid(True, alpha=0.3)
+    if label:
+        ax.plot(periods, power, color='#1f77b4', lw=0.9, label=label, antialiased=False)
         ax.legend()
-        
-        outpath = outdir / f"frequency_spectrum_{prefix}{suffix}.pdf"
-        plt.tight_layout()
-        plt.savefig(outpath)
-        plt.close()
-        print(f"Saved {outpath}")
-
-    # Full plot
-    _make_plot()
+    else:
+        ax.plot(periods, power, color='#1f77b4', lw=0.9, antialiased=False)
     
-    # Zoomed plot
-    if zoom_center is not None:
-        _make_plot(suffix="_zoomed", xlim=(zoom_center - zoom_width/2, zoom_center + zoom_width/2))
+    ax.set_xlabel("Period (s)")
+    ax.set_ylabel("Power")
+    ax.set_xscale('log')
+    ax.set_xlim(periods.min(), periods.max())
+    ax.set_ylim(bottom=0)
+    
+    add_atlas_label(ax)
+    
+    outpath = outdir / f"frequency_spectrum_{prefix}.pdf"
+    plt.tight_layout()
+    plt.savefig(outpath)
+    plt.close()
+    print(f"Saved {outpath}")
+
+
+def plot_spectrum_multi(freqs, spectra, outdir, prefix):
+    periods = 1.0 / freqs  # Convert to period in seconds
+    
+    fig, ax = plt.subplots()
+    
+    for label, power in spectra:
+        ax.plot(periods, power, lw=0.9, alpha=0.8, label=str(label), antialiased=False)
+    
+    ax.set_xlabel("Period (s)")
+    ax.set_ylabel("Power")
+    ax.set_xscale('log')
+    ax.set_xlim(periods.min(), periods.max())
+    ax.legend()
+    
+    add_atlas_label(ax)
+    
+    outpath = outdir / f"frequency_spectrum_{prefix}.pdf"
+    plt.tight_layout()
+    plt.savefig(outpath)
+    plt.close()
+    print(f"Saved {outpath}")
+
+
+def plot_significance(freqs, power, ls_object, outdir, prefix,
+                      fap_method='single'):
+    """
+    Plot significance (sigma) vs period.
+    Left axis: sigma, right axis: p-value.
+    Noise floor (sigma~0, p~1) at top, significant features dip downward.
+    """
+    if ls_object is None:
+        print("Skipping significance plot (no LombScargle object available).")
+        return
+    
+    periods = 1.0 / freqs  # Convert to period in seconds
+    
+    # Compute p-value and convert to sigma
+    fap = ls_object.false_alarm_probability(power, method=fap_method)
+    fap = np.clip(fap, 1e-15, 1.0)
+    sigma = norm.isf(fap)  # One-sided: sigma = norm.isf(p)
+    sigma = np.maximum(sigma, 0.0)  # Clip negative values (p > 0.5 gives sigma < 0)
+    
+    fig, ax = plt.subplots()
+    
+    ax.plot(periods, sigma, color='#1f77b4', lw=0.9, antialiased=False)
+    
+    ax.set_xlabel("Period (s)")
+    ax.set_xscale('log')
+    ax.set_xlim(periods.min(), periods.max())
+    
+    # Linear y-axis, inverted: 0 at top, max at bottom
+    sigma_max = max(sigma.max() * 1.1, 3.0)
+    ax.set_ylim(sigma_max, 0)  # Inverted: large at bottom, 0 at top
+    ax.set_ylabel(r'Significance ($\sigma$)')
+    
+    # Right axis: p-value ticks at corresponding sigma positions
+    ax2 = ax.twinx()
+    ax2.set_ylim(ax.get_ylim())  # Inherit inverted limits
+    
+    # Place p-value ticks at key sigma values (consistent scientific notation)
+    sigma_ticks = [0, 1, 2, 3, 4, 5]
+    sigma_ticks = [s for s in sigma_ticks if s <= sigma_max]
+    p_labels = [f'{norm.sf(s):.2e}' for s in sigma_ticks]
+    
+    ax2.set_yticks(sigma_ticks)
+    ax2.set_yticklabels(p_labels)
+    ax2.set_ylabel('p-value')
+    ax2.tick_params(axis='y', direction='in', which='both',
+                    labelsize=14, length=8)
+    ax2.minorticks_off()  # Discrete p-value ticks, no minor ticks
+    
+    add_atlas_label(ax, x=0.05, y=0.15)
+    
+    outpath = outdir / f"frequency_spectrum_significance_{prefix}.pdf"
+    plt.tight_layout()
+    plt.savefig(outpath)
+    plt.close()
+    print(f"Saved {outpath}")
 
 
 def main():
@@ -302,13 +384,25 @@ def main():
     parser.add_argument('--input_file', default='input/set3_pruned.parquet')
     parser.add_argument('--outdir', default='output/plots_frequency')
     parser.add_argument('--inject_test', action='store_true', help="Inject synthetic signal")
-    parser.add_argument('--test_freq', type=float, default=3.5, help="Injection frequency (sidereal units)")
+    parser.add_argument('--test_freq', type=float, default=10.0,
+                        help="Injection frequency in sidereal units (default: 10)")
     parser.add_argument('--test_amp', type=float, nargs='+', default=[2e-4], help="Injection amplitude(s)")
-    parser.add_argument('--max_freq', type=float, default=10.0, help="Max freq in sidereal units")
+    parser.add_argument('--min_period', type=float, default=1.0,
+                        help="Min period in seconds (default: 1)")
+    parser.add_argument('--max_period', type=float, default=10000.0,
+                        help="Max period in seconds (default: 10000)")
+    parser.add_argument('--n_freq', type=int, default=10000,
+                        help="Number of frequency grid points (default: 10000)")
+    parser.add_argument('--fap_method', type=str, default='single',
+                        choices=['single', 'baluev', 'naive'],
+                        help="FAP method: single (per-freq), baluev (trials-corrected), naive")
     args = parser.parse_args()
     
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    
+    # Apply ATLAS style globally
+    set_atlas_style()
     
     # Load Data
     if args.input_file and Path(args.input_file).exists():
@@ -333,17 +427,26 @@ def main():
         print("--- TEST MODE ---")
         for amp in args.test_amp:
             y_inj = inject_signal(t, y, args.test_freq, amp)
-            freqs, power = run_lomb_scargle(t, y_inj, w, max_f_sid=args.max_freq)
+            freqs, power, ls_obj = run_lomb_scargle(t, y_inj, w,
+                                                     min_period_s=args.min_period,
+                                                     max_period_s=args.max_period,
+                                                     n_freq=args.n_freq)
             
             amp_str = f"{amp:.1e}"
-            label_prefix = f"test_inj_{args.test_freq}_amp_{amp_str}"
-            title = f"{src_name} (Injected: Freq={args.test_freq} f_sid, Amp={amp_str})"
+            label_prefix = f"test_inj_f{args.test_freq}_amp_{amp_str}"
             
-            plot_spectrum_single(freqs, power, outdir, label_prefix, args.max_freq, title)
+            plot_spectrum_single(freqs, power, outdir, label_prefix)
+            plot_significance(freqs, power, ls_obj, outdir, label_prefix,
+                             fap_method=args.fap_method)
     else:
-        freqs, power = run_lomb_scargle(t, y, w, max_f_sid=args.max_freq)
+        freqs, power, ls_obj = run_lomb_scargle(t, y, w,
+                                                 min_period_s=args.min_period,
+                                                 max_period_s=args.max_period,
+                                                 n_freq=args.n_freq)
         file_prefix = src_name.lower().replace(' ', '_')
-        plot_spectrum_single(freqs, power, outdir, file_prefix, args.max_freq, src_name)
+        plot_spectrum_single(freqs, power, outdir, file_prefix)
+        plot_significance(freqs, power, ls_obj, outdir, file_prefix,
+                         fap_method=args.fap_method)
     
 
 if __name__ == "__main__":

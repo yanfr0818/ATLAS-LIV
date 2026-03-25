@@ -29,7 +29,7 @@ from sme_fit import fit_all_sme_coeffs, fit_results_to_dict, SME_COEFFICIENTS
 ANALYSIS_COLS = ['LBStart', 'LBEnd', 'ZllLumi', 'ZllLumiErr', 'OffLumi']
 
 # Fixed columns (time/LB identity) - not shuffled
-FIXED_COLS = ['FillNum', 'RunNum', 'LBNum', 'LBStart', 'LBEnd', 'LBLive', 'LBFull']
+FIXED_COLS = ['FillNum', 'RunNum', 'LBNum', 'LBStart', 'LBEnd', 'LBLive', 'LBFull', 'Year']
 
 # Sidereal day in hours
 SIDEREAL_DAY_H = 23.9344696
@@ -49,14 +49,19 @@ def load_original_data(path: str) -> pd.DataFrame:
 
 def scramble_one(df: pd.DataFrame, rng: np.random.Generator) -> pd.DataFrame:
     """Scramble: keep FIXED_COLS in place, shuffle other columns as a block."""
-    all_cols = list(df.columns)
-    payload_cols = [c for c in all_cols if c not in FIXED_COLS]
+    shuffled_pieces = []
     
-    perm = rng.permutation(len(df))
-    result = df[FIXED_COLS].copy()
-    payload = df[payload_cols].iloc[perm].reset_index(drop=True)
-    
-    return pd.concat([result, payload], axis=1)
+    for year_val, group in df.groupby('Year', dropna=False):
+        all_cols = list(group.columns)
+        payload_cols = [c for c in all_cols if c not in FIXED_COLS]
+        
+        perm = rng.permutation(len(group))
+        fixed_part = group[FIXED_COLS].copy().reset_index(drop=True)
+        payload_part = group[payload_cols].iloc[perm].reset_index(drop=True)
+        
+        shuffled_pieces.append(pd.concat([fixed_part, payload_part], axis=1))
+        
+    return pd.concat(shuffled_pieces, ignore_index=True)
 
 
 def fold_phase(tmid: np.ndarray, per_h: float) -> np.ndarray:
@@ -90,9 +95,10 @@ def compute_double_ratio_and_fit(
     nerr2 = np.zeros(nbins, dtype=float)
     d = np.zeros(nbins, dtype=float)
     
-    nv = df['ZllLumi'].to_numpy(dtype=float)
-    ev = df['ZllLumiErr'].to_numpy(dtype=float)
-    dv = df['OffLumi'].to_numpy(dtype=float)
+    t_live = df['LBLive'].to_numpy(dtype=float)
+    nv = df['ZllLumi'].to_numpy(dtype=float) * t_live
+    ev = df['ZllLumiErr'].to_numpy(dtype=float) * t_live
+    dv = df['OffLumi'].to_numpy(dtype=float) * t_live
     
     np.add.at(n, idx, nv)
     np.add.at(nerr2, idx, ev * ev)

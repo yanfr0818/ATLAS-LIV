@@ -2,15 +2,14 @@
 """
 run_double_ratio.py
 
-Compute double ratio from Set3 data and generate plots.
+Compute double ratio from Set3 data and generate ATLAS-formatted plots.
 Simplified design:
-- Reads single combined CSV (no year separation)
+- Reads single combined Parquet/CSV (with Year separation)
 - Uses direct phase binning with configurable bin duration per period
-- No rebinning - bins are calculated directly at desired resolution
+- Outputs 7 single-year ATLAS standardized plots per scramble/dataset
 
 Usage:
-    python run_double_ratio.py --infile <data.csv> --outdir <plot_path>
-    python run_double_ratio.py --infile <data.csv> --outdir <plot_path> --bin_sday 840 --bin_day 900 --bin_hour 60
+    python run_double_ratio.py --infile output/scrambles_pq/scramble_0000.parquet --outdir output/plots_DR
 """
 
 import argparse
@@ -20,13 +19,58 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import pandas as pd
 
 # Period durations in hours
-PER_H = {'sday': 23.9344696, 'day': 24.0, 'hour': 1.0}
+PER_H = {'sday': 24.0, 'day': 23.9344696, 'hour': 1.0}
+
+def set_atlas_style():
+    """Apply ATLAS-style matplotlib rcParams."""
+    plt.rcParams.update({
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['Arial', 'Helvetica', 'Liberation Sans'],
+        'font.size': 16,
+        'mathtext.fontset': 'custom',
+        'mathtext.rm': 'Arial',
+        'mathtext.it': 'Arial:italic',
+        'mathtext.bf': 'Arial:bold',
+        'axes.linewidth': 1.5,
+        'axes.labelsize': 18,
+        'axes.titlesize': 18,
+        'xtick.direction': 'in',
+        'ytick.direction': 'in',
+        'xtick.top': True,
+        'ytick.right': True,
+        'xtick.major.size': 8,
+        'xtick.minor.size': 4,
+        'ytick.major.size': 8,
+        'ytick.minor.size': 4,
+        'xtick.major.width': 1.2,
+        'xtick.minor.width': 0.8,
+        'ytick.major.width': 1.2,
+        'ytick.minor.width': 0.8,
+        'xtick.labelsize': 14,
+        'ytick.labelsize': 14,
+        'xtick.minor.visible': True,
+        'ytick.minor.visible': True,
+        'legend.frameon': False,
+        'legend.fontsize': 14,
+        'figure.figsize': (8, 8),
+        'figure.dpi': 150,
+        'axes.grid': False,
+    })
 
 
-def fold_phase(tmid: np.ndarray, per_h: float, t0: float = 0.0) -> np.ndarray:
+def add_atlas_label(ax, sqrts, lumi, label_type='Internal', x=0.05, y=0.95):
+    """Add the 'ATLAS Internal' watermark and luminosity info."""
+    ax.text(x, y, r'$\bf{ATLAS}$' + f' {label_type}',
+            transform=ax.transAxes,
+            fontsize=18, va='top', ha='left')
+    ax.text(x, y - 0.055, fr'$\sqrt{{s}} = {sqrts}$ TeV, {lumi:.1f} fb$^{{-1}}$',
+            transform=ax.transAxes,
+            fontsize=14, va='top', ha='left')
+
+
+def fold_phase(tmid: np.ndarray, per_h: float, t0: float = 953551209.0) -> np.ndarray:
     """Fold time into phase [0, 1) for a given period."""
     return np.mod((tmid - t0) / 3600.0, per_h) / per_h
 
@@ -38,64 +82,41 @@ def phase_binned_double_ratio(
     den_col: str,
     per_tag: str,
     nbins: int = 100,
-    t0: float = 0.0
+    t0: float = 953551209.0
 ) -> tuple:
-    """
-    Calculate phase-binned double ratio with direct binning.
-    
-    Args:
-        df: DataFrame with LBStart, LBEnd, and the num/den columns
-        num_col: Column name for numerator (e.g., 'ZllLumi')
-        numerr_col: Column name for numerator error (e.g., 'ZllLumiErr')
-        den_col: Column name for denominator (e.g., 'OffLumi')
-        per_tag: Period tag ('sday', 'day', 'hour')
-        nbins: Number of phase bins (default 100)
-        t0: Reference time for phase calculation
-        
-    Returns:
-        x: Phase bin centers [0, 1)
-        y: Double ratio values (normalized to mean)
-        yerr: Errors on double ratio
-        info: Dict with binning metadata
-    """
     per_h = PER_H[per_tag]
     per_sec = per_h * 3600.0
     bin_sec = per_sec / nbins
     
-    # Calculate phase from LB midpoints
     tmid = 0.5 * (df['LBStart'].to_numpy() + df['LBEnd'].to_numpy())
     phi = fold_phase(tmid, per_h, t0)
     
-    # Assign to bins
     idx = np.floor(phi * nbins).astype(int)
-    idx = np.clip(idx, 0, nbins - 1)  # Handle edge case phi=1.0
+    idx = np.clip(idx, 0, nbins - 1)
     
-    # Accumulate sums per bin
     n = np.zeros(nbins, dtype=float)
     nerr2 = np.zeros(nbins, dtype=float)
     d = np.zeros(nbins, dtype=float)
     
-    nv = df[num_col].to_numpy(dtype=float)
-    ev = df[numerr_col].to_numpy(dtype=float)
-    dv = df[den_col].to_numpy(dtype=float)
+    t_live = df['LBLive'].to_numpy(dtype=float)
+    nv = df[num_col].to_numpy(dtype=float) * t_live
+    ev = df[numerr_col].to_numpy(dtype=float) * t_live
+    dv = df[den_col].to_numpy(dtype=float) * t_live
     
     np.add.at(n, idx, nv)
     np.add.at(nerr2, idx, ev * ev)
     np.add.at(d, idx, dv)
     
-    # Filter empty bins
     ok = d > 0
     n = n[ok]
     nerr2 = nerr2[ok]
     d = d[ok]
     
-    # Calculate ratio and normalize
     r = n / d
     r0 = n.sum() / d.sum()
     y = r / r0 - 1.0
     yerr = np.sqrt(nerr2) / (d * r0)
     
-    # Bin centers as phase
     nb_plot = len(y)
     x = (np.arange(nbins)[ok] + 0.5) / float(nbins)
     
@@ -110,112 +131,170 @@ def phase_binned_double_ratio(
     return x, y, yerr, info
 
 
-def make_plot(outpath: str, title: str, top_text: str, bot_text: str, series: list, y_pref=(0.99, 1.01)):
-    """Generate double ratio plot with multiple series."""
-    fig, ax = plt.subplots(figsize=(11, 4.2))
+def make_atlas_dr_plot(outpath: str, x, y, yerr, per_tag, sqrts, lumi, info: dict, top_text: str):
+    set_atlas_style()
+    fig, ax = plt.subplots()
     
-    handles = []
-    labels = []
-    for s in series:
-        h = ax.errorbar(s['x'], s['y'], yerr=s['yerr'], 
-                       fmt=s['fmt'], markersize=3, elinewidth=1, capsize=0, linewidth=0)
-        handles.append(h[0])
-        labels.append(s['label'])
-    
-    ax.axhline(0.0, linewidth=1.0, color='black')
-    ax.set_xlim(0.0, 1.0)
-    ax.set_xlabel('phase')
-    ax.set_ylabel('Double Ratio - 1')
-    ax.set_title(title)
-    
-    # Dynamic y-limits
-    ylo = min(float(np.min(s['y'] - s['yerr'])) for s in series)
-    yhi = max(float(np.max(s['y'] + s['yerr'])) for s in series)
-    lo, hi = y_pref
-    if ylo >= lo and yhi <= hi:
-        ax.set_ylim(lo, hi)
-    else:
-        pad = 0.08 * (yhi - ylo) if yhi > ylo else 0.002
-        ax.set_ylim(ylo - pad, yhi + pad)
-    
-    ax.text(0.02, 0.98, top_text, transform=ax.transAxes, va='top', ha='left', fontsize=9,
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.85, linewidth=0.5))
-    ax.text(0.02, 0.06, bot_text, transform=ax.transAxes, va='bottom', ha='left', fontsize=9,
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.85, linewidth=0.5))
-    ax.legend(handles, labels, loc='center left', bbox_to_anchor=(1.01, 0.5), frameon=False)
-    
-    fig.tight_layout()
-    fig.savefig(outpath)
-    plt.close(fig)
-
-
-def make_single_period_plot(outpath: str, per_tag: str, x, y, yerr, info: dict, 
-                             top_text: str, y_pref=(-0.005, 0.005)):
-    """Generate single-period double ratio plot with mean/RMS in legend."""
-    fig, ax = plt.subplots(figsize=(10, 5))
-    
-    # Period-specific colors (same as combined plot)
-    color_map = {'sday': 'C0', 'day': 'C1', 'hour': 'C2'}  # default matplotlib colors
-    fmt_map = {'sday': 'o', 'day': 's', 'hour': 'D'}
-    label_map = {'sday': 'Sidereal Day', 'day': 'Solar Day', 'hour': '1 Hour'}
+    color_map = {'sday': 'C1', 'day': 'C0', 'hour': 'C2'}
+    fmt_map = {'sday': 's', 'day': 'o', 'hour': 'D'}
+    label_map = {'sday': 'Solar Day', 'day': 'Sidereal Day', 'hour': '1 Hour'}
     
     color = color_map.get(per_tag, 'black')
     fmt = fmt_map.get(per_tag, 'o')
     per_label = label_map.get(per_tag, per_tag)
     
-    # Calculate statistics
-    mean_val = np.mean(y)
-    rms_val = np.std(y)
+    ax.errorbar(x, y, yerr=yerr, fmt=fmt, color=color, markersize=5, 
+                elinewidth=1.5, capsize=0, label=f'Data ({per_label})')
     
-    # Data points with period-specific color
-    ax.errorbar(x, y, yerr=yerr, fmt=fmt, color=color, markersize=4, 
-                elinewidth=1, capsize=2, label=f'{per_label}')
-    
-    # Ideal line (y=0)
     ax.axhline(0.0, linewidth=1.5, color='red', linestyle='-', label='Ideal (DR-1 = 0)')
     
-    # Mean line
-    ax.axhline(mean_val, linewidth=1.2, color='blue', linestyle='--', 
-               label=f'Mean = {mean_val:.2e}')
+    mean_val = np.mean(y)
+    rms_val = np.std(y)
+    ax.axhline(mean_val, linewidth=1.2, color='blue', linestyle='--', label=f'Mean = {mean_val:.2e}')
     
     # RMS bands (dashed lines at ±RMS from mean)
-    ax.axhline(mean_val + rms_val, linewidth=1.0, color='green', linestyle=':', 
-               label=f'±RMS = {rms_val:.2e}')
+    ax.axhline(mean_val + rms_val, linewidth=1.0, color='green', linestyle=':', label=f'±RMS = {rms_val:.2e}')
     ax.axhline(mean_val - rms_val, linewidth=1.0, color='green', linestyle=':')
     
     ax.set_xlim(0.0, 1.0)
-    ax.set_xlabel('Phase', fontsize=12)
-    ax.set_ylabel('Double Ratio - 1', fontsize=12)
+    ax.set_xticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
+    ax.set_xticklabels(['0.0', '0.2', '0.4', '0.6', '0.8', '1.0'])
+    ax.set_xlabel('Phase', labelpad=10)
+    ax.set_ylabel('Double Ratio - 1', labelpad=10)
     
-    # Period-specific title
-    period_titles = {'sday': 'Sidereal Day (23.93h)', 'day': 'Solar Day (24h)', 'hour': '1 Hour'}
-    ax.set_title(f'Double Ratio vs Phase: {period_titles.get(per_tag, per_tag)}', fontsize=14)
+    add_atlas_label(ax, sqrts, lumi, label_type='Internal')
     
-    # Dynamic y-limits
+    info_text = f"Bins: {info['nbins']} ({info['bin_min']:.1f} min)\n{top_text}"
+    ax.text(0.95, 0.95, info_text, transform=ax.transAxes, va='top', ha='right', fontsize=12)
+    
+    ax.legend(loc='lower right')
+    
     ylo = float(np.min(y - yerr))
     yhi = float(np.max(y + yerr))
-    lo, hi = y_pref
-    if ylo >= lo and yhi <= hi:
-        ax.set_ylim(lo, hi)
+    pad = 0.2 * (yhi - ylo) if yhi > ylo else 0.005
+    min_span = 0.005
+    if (yhi + pad) - (ylo - pad) < min_span:
+        mid = (yhi + ylo) / 2
+        ax.set_ylim(mid - min_span / 2, mid + min_span / 2)
     else:
-        pad = 0.1 * (yhi - ylo) if yhi > ylo else 0.002
         ax.set_ylim(ylo - pad, yhi + pad)
     
-    # Info text box
-    info_text = f"Bins: {info['nbins']} @ {info['bin_min']:.1f} min ({info['nbins_filled']} filled)"
-    ax.text(0.02, 0.98, top_text, transform=ax.transAxes, va='top', ha='left', fontsize=9,
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.85, linewidth=0.5))
-    ax.text(0.02, 0.06, info_text, transform=ax.transAxes, va='bottom', ha='left', fontsize=9,
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.85, linewidth=0.5))
-    
-    ax.legend(loc='upper right', fontsize=10)
-    ax.grid(True, alpha=0.3)
-    
     fig.tight_layout()
-    fig.savefig(outpath, dpi=150)
+    fig.savefig(outpath)
     plt.close(fig)
     print(f"Wrote {outpath}")
 
+
+def run_single_dataset(args):
+    """Process a single dataset to generate DR plots."""
+    usecols = ['RunNum', 'LBStart', 'LBEnd', args.den, args.num, args.numerr, 'LBLive', 'Year']
+    if args.infile.endswith('.parquet'):
+        df = pd.read_parquet(args.infile, columns=usecols)
+    else:
+        df = pd.read_csv(args.infile, usecols=usecols)
+        
+    df = df[df[args.den] > 0]
+    print(f"Loaded {len(df)} rows from {args.infile}")
+    
+    periods = [
+        ('sday', 's', 'Solar Day'),
+        ('day', 'o', 'Sidereal Day'),
+    ]
+    
+    df['YearStr'] = df['Year'].astype(str)
+    # Combine 15 and 16
+    df.loc[df['Year'].isin([2015, 2016]), 'YearStr'] = '1516'
+    
+    # Combine 22 and 23
+    df.loc[df['Year'].isin([2022, 2023]), 'YearStr'] = '2223'
+    
+    lumi_map = {
+        '1516': 36.6,
+        '2017': 44.6,
+        '2018': 58.7,
+        '2223': 51.1,
+        '2024': 107.6,
+        '2025': 114.7
+    }
+    
+    sqrts_map = {
+        '1516': 13,
+        '2017': 13,
+        '2018': 13,
+        '2223': 13.6,
+        '2024': 13.6,
+        '2025': 13.6
+    }
+
+    
+    year_groups = df.groupby('YearStr')
+    
+    # Process each year
+    for yr, group in year_groups:
+        if yr not in lumi_map:
+            continue
+            
+        sqrts = sqrts_map[yr]
+        lumi = lumi_map[yr]
+        
+        if args.scramble_idx is not None:
+            top_text = f"Scramble: {args.scramble_idx:04d}"
+        else:
+            top_text = "Original Data"
+        
+        for per_tag, fmt, label in periods:
+            x, y, yerr, info = phase_binned_double_ratio(
+                group, args.num, args.numerr, args.den, per_tag, args.nbins, args.t0
+            )
+            
+            scr_idx = args.name.split('_')[-1] if 'scramble' in args.name else 'data'
+            outpath = os.path.join(args.outdir, f"DR_{scr_idx}_{yr}_{per_tag}.pdf")
+            
+            make_atlas_dr_plot(outpath, x, y, yerr, per_tag, sqrts, lumi, info, top_text)
+
+
+def run_scrambles_batch(args):
+    """Run batch analysis over multiple scrambles."""
+    import json
+    from pathlib import Path
+    
+    results_path = Path("output/results/batch_1000_results.json")
+    scrambles_dir = Path("output/scrambles_pq")
+    
+    if not results_path.exists():
+        print(f"Error: {results_path} not found!")
+        return
+        
+    with open(results_path, "r") as f:
+        data = json.load(f)
+        
+    master_seed = data["seed"]
+    scrambles = data["scrambles"]
+    
+    print(f"Running batch processing for {args.n_scrambles} scrambles...")
+    
+    for i in range(args.n_scrambles):
+        if i >= len(scrambles):
+            break
+            
+        s = scrambles[i]
+        idx = s["scramble_idx"]
+        infile = scrambles_dir / f"scramble_{idx:04d}.parquet"
+        
+        if not infile.exists():
+            print(f"Warning: {infile} not found, skipping...")
+            continue
+            
+        import copy
+        iter_args = copy.copy(args)
+        iter_args.infile = str(infile)
+        iter_args.name = f"scramble_{idx:04d}"
+        iter_args.seed = master_seed
+        iter_args.child_seed = s["child_seed"]
+        iter_args.scramble_idx = idx
+        
+        print(f"\nProcessing Scramble {idx}...")
+        run_single_dataset(iter_args)
 
 
 def main():
@@ -225,88 +304,18 @@ def main():
     ap.add_argument('--num', default='ZllLumi', help='Numerator column')
     ap.add_argument('--numerr', default='ZllLumiErr', help='Numerator error column')
     ap.add_argument('--den', default='OffLumi', help='Denominator column')
-    ap.add_argument('--t0', type=float, default=0.0, help='Reference time for phase')
-    
-    # Number of phase bins (fixed for all periods)
+    ap.add_argument('--t0', type=float, default=953551209.0, help='Reference time for phase')
     ap.add_argument('--nbins', type=int, default=100, help='Number of phase bins')
-    
-    # Output options
     ap.add_argument('--name', default='', help='Optional name prefix for output files')
+    ap.add_argument('--n_scrambles', type=int, default=0, help='Process batch scrambles instead of single input')
     
-    # Seed display (optional - for scrambled data only)
-    ap.add_argument('--seed', type=int, default=None, help='Master seed used for scrambling (for display)')
-    ap.add_argument('--scramble_idx', type=int, default=None, help='Scramble index (for display)')
-    ap.add_argument('--child_seed', type=int, default=None, help='Explicit child seed (for display)')
     args = ap.parse_args()
-    
     os.makedirs(args.outdir, exist_ok=True)
     
-    # Load data
-    usecols = ['LBStart', 'LBEnd', args.den, args.num, args.numerr]
-    if args.infile.endswith('.parquet'):
-        df = pd.read_parquet(args.infile, columns=usecols)
+    if args.n_scrambles > 0:
+        run_scrambles_batch(args)
     else:
-        df = pd.read_csv(args.infile, usecols=usecols)
-    df = df[df[args.den] > 0]
-    print(f"Loaded {len(df)} rows from {args.infile}")
-    
-    # Period configuration (all use same nbins)
-    periods = [
-        ('sday', 'o', 'sday'),
-        ('day', 's', 'day'),
-        ('hour', 'D', '1h'),
-    ]
-    
-    # Calculate double ratio for each period
-    series = []
-    bot_lines = []
-    period_data = []  # Store data for individual plots
-    for per_tag, fmt, label in periods:
-        x, y, yerr, info = phase_binned_double_ratio(
-            df, args.num, args.numerr, args.den, per_tag, args.nbins, args.t0
-        )
-        series.append({'x': x, 'y': y, 'yerr': yerr, 'fmt': fmt, 'label': label})
-        bot_lines.append(f"{per_tag}: {info['nbins']} bins @ {info['bin_min']:.1f} min ({info['nbins_filled']} filled)")
-        period_data.append((per_tag, label, x, y, yerr, info))
-    
-    # Generate plot
-    # Row 1: Metadata
-    top_parts = [f"num={args.num}, den={args.den}, rows={len(df)}"]
-    top = ", ".join(top_parts)
-    
-    # Row 2: Seed info
-    seed_text = ""
-    if args.seed is not None:
-        seed_parts = [f"master={args.seed}"]
-        if args.child_seed is not None:
-            seed_parts.append(f"child={args.child_seed}")
-        if args.scramble_idx is not None:
-            seed_parts.append(f"idx={args.scramble_idx}")
-        seed_text = ", ".join(seed_parts)
-    elif args.child_seed is not None:
-         seed_text = f"child={args.child_seed}"
-         
-    bot = "\n".join(bot_lines)
-
-    # Pass metadata as top_text, seed info as a second line (concatenated with newline)
-    if seed_text:
-        top_combo = f"{top}\n{seed_text}"
-    else:
-        top_combo = top
-
-    name_prefix = f"{args.name}_" if args.name else ""
-    
-    # Generate SEPARATE plots for each period
-    for per_tag, label, x, y, yerr, info in period_data:
-        outpath_single = os.path.join(args.outdir, f"{name_prefix}double_ratio_{per_tag}.pdf")
-        make_single_period_plot(outpath_single, per_tag, x, y, yerr, info, top_combo)
-    
-    # Also generate combined plot
-    outpath = os.path.join(args.outdir, f"{name_prefix}double_ratio.pdf")
-    
-    # Set standard limits for scatter plots around 0
-    make_plot(outpath, "Double Ratio - 1 vs Phase", top_combo, bot, series, y_pref=(-0.005, 0.005))
-    print(f"Wrote {outpath}")
+        run_single_dataset(args)
 
 
 if __name__ == '__main__':
